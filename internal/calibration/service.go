@@ -26,6 +26,21 @@ func (e *TransitConflict) Unwrap() error { return ErrInTransit }
 func New(s *store.Store) *Service { return &Service{store: s, now: time.Now} }
 
 func (s *Service) Create(input CreateInput, key string) (domain.CalibrationTask, error) {
+	if key != "" {
+		for _, event := range s.store.EventsWithKey(key) {
+			if event.Type != "TaskCreated" {
+				return domain.CalibrationTask{}, store.ErrDuplicateKey
+			}
+			var task domain.CalibrationTask
+			if store.DecodePayload(event, &task) != nil {
+				return domain.CalibrationTask{}, store.ErrDuplicateKey
+			}
+			if !sameCreateInput(task, input) {
+				return domain.CalibrationTask{}, store.ErrDuplicateKey
+			}
+			return task, nil
+		}
+	}
 	if strings.TrimSpace(input.StationCode) == "" || strings.TrimSpace(input.InstrumentID) == "" || strings.TrimSpace(input.InstrumentType) == "" || input.RangeMax <= input.RangeMin || input.RangeMin < 0 || len(input.ReferenceStandards) == 0 || strings.TrimSpace(input.CreatedBy) == "" {
 		return domain.CalibrationTask{}, fmt.Errorf("%w: 台站、仪器、标准器、范围和创建人均为必填", ErrInvalid)
 	}
