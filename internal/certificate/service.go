@@ -115,6 +115,11 @@ func (s *Service) Verify(number, code string) (Verification, error) {
 	if found {
 		return cached, nil
 	}
+	s.verifyMu.Lock()
+	defer s.verifyMu.Unlock()
+	if cached, found := s.verifyCache[cacheKey]; found {
+		return cached, nil
+	}
 	cert, previous, err := s.Get(number)
 	if err != nil {
 		return Verification{}, err
@@ -134,10 +139,19 @@ func (s *Service) Verify(number, code string) (Verification, error) {
 		message = "证书已作废"
 	}
 	result := Verification{Certificate: cert, DigestValid: digestOK, CodeValid: codeOK, Issued: issued, WithinValidity: within, Valid: valid, Message: message, Voided: voided}
-	s.verifyMu.Lock()
 	s.verifyCache[cacheKey] = result
-	s.verifyMu.Unlock()
 	return result, nil
+}
+
+func (s *Service) invalidateVerifyCache(number string) {
+	prefix := strings.ToUpper(strings.TrimSpace(number)) + "|"
+	s.verifyMu.Lock()
+	defer s.verifyMu.Unlock()
+	for key := range s.verifyCache {
+		if strings.HasPrefix(key, prefix) {
+			delete(s.verifyCache, key)
+		}
+	}
 }
 func (s *Service) List() []domain.CalibrationCertificate {
 	result := make([]domain.CalibrationCertificate, 0)
@@ -165,6 +179,9 @@ func (s *Service) Void(number string, expected uint64, reason, actor, key string
 			var old VoidRecord
 			if store.DecodePayload(e, &old) == nil && old.CertificateNo == number && old.Reason == reason && old.Actor == actor {
 				cert, _, err := s.Get(number)
+				if err == nil {
+					s.invalidateVerifyCache(number)
+				}
 				return cert, err
 			}
 			return domain.CalibrationCertificate{}, store.ErrDuplicateKey
@@ -188,6 +205,7 @@ func (s *Service) Void(number string, expected uint64, reason, actor, key string
 	if _, _, err = s.store.AppendBatch(cert.TaskID, expected, key, store.ProposedEvent{AggregateID: cert.TaskID, Type: "CertificateVoided", Actor: actor, Payload: record}); err != nil {
 		return domain.CalibrationCertificate{}, err
 	}
+	s.invalidateVerifyCache(number)
 	cert.Status = "已作废"
 	cert.VoidedReason = record.Reason
 	cert.VoidedBy = record.Actor
