@@ -240,7 +240,34 @@ func (s *Service) VerifyChain() ChainReport {
 	return result
 }
 func (s *Service) lastDigest() string {
-	return s.lastCertificateDigest
+	if cached := s.lastCertificateDigest; cached != "" {
+		return cached
+	}
+	return s.lastIssuedDigestFromEvents()
+}
+
+// lastIssuedDigestFromEvents derives the ResultDigest of the most recent
+// CertificateIssued event from the persisted event log. This keeps the
+// certificate hash chain continuous across process restarts, where the
+// in-memory cache (lastCertificateDigest) is empty. It mirrors the
+// derivation performed by VerifyChain, so the two stay consistent.
+func (s *Service) lastIssuedDigestFromEvents() string {
+	events := s.store.Events()
+	for index := len(events) - 1; index >= 0; index-- {
+		event := events[index]
+		if event.Type != "CertificateIssued" {
+			continue
+		}
+		var payload struct {
+			Certificate             domain.CalibrationCertificate `json:"certificate"`
+			PreviousCertificateHash string                        `json:"previousCertificateHash"`
+		}
+		if store.DecodePayload(event, &payload) != nil {
+			return ""
+		}
+		return payload.Certificate.ResultDigest
+	}
+	return ""
 }
 func digestMaterial(value material) string {
 	data, _ := json.Marshal(value)
