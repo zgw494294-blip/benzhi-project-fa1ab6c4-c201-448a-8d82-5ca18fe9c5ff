@@ -148,9 +148,7 @@ func readAndVerifyLog(path string) ([]Event, error) {
 func (s *Store) Events() []Event {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	result := make([]Event, len(s.events))
-	copy(result, s.events)
-	return result
+	return cloneEvents(s.events)
 }
 
 func (s *Store) EventsFor(aggregateID string) []Event {
@@ -162,7 +160,7 @@ func (s *Store) EventsFor(aggregateID string) []Event {
 			result = append(result, event)
 		}
 	}
-	return result
+	return cloneEvents(result)
 }
 
 func (s *Store) EventsWithKey(key string) []Event {
@@ -172,6 +170,23 @@ func (s *Store) EventsWithKey(key string) []Event {
 	for _, event := range s.events {
 		if event.IdempotencyKey == key {
 			result = append(result, event)
+		}
+	}
+	return cloneEvents(result)
+}
+
+// cloneEvents returns a slice whose Event values are independent copies of the
+// input, including the Payload bytes. Callers may freely modify the returned
+// Payload (or its underlying bytes) without affecting the Store's internal
+// projection.
+func cloneEvents(events []Event) []Event {
+	result := make([]Event, len(events))
+	copy(result, events)
+	for index := range result {
+		if len(result[index].Payload) > 0 {
+			payload := make([]byte, len(result[index].Payload))
+			copy(payload, result[index].Payload)
+			result[index].Payload = payload
 		}
 	}
 	return result
@@ -268,7 +283,7 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 	if err := s.writeSnapshotLocked(); err != nil {
 		return nil, false, err
 	}
-	return created, false, nil
+	return cloneEvents(created), false, nil
 }
 
 func (s *Store) eventsWithKeyLocked(key string) []Event {
@@ -278,7 +293,7 @@ func (s *Store) eventsWithKeyLocked(key string) []Event {
 			result = append(result, event)
 		}
 	}
-	return result
+	return cloneEvents(result)
 }
 
 func (s *Store) writeSnapshotLocked() error {
