@@ -79,7 +79,17 @@ type Service struct {
 	store         *store.Store
 	calibration   *calibration.Service
 	coverageMu    sync.RWMutex
-	coverageCache map[string]domain.CoverageSnapshot
+	coverageCache map[string]coverageEntry
+}
+
+// coverageEntry pairs a cached coverage snapshot with the last event sequence
+// observed for the task when the snapshot was computed. Coverage compares this
+// sequence against the live event stream so that any appended event
+// (measurement, required-points change, review return, remediation) forces a
+// recomputation instead of returning a stale result.
+type coverageEntry struct {
+	snapshot domain.CoverageSnapshot
+	sequence uint64
 }
 
 type BatchPrecheck struct {

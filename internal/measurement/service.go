@@ -18,7 +18,7 @@ import (
 var ErrInvalid = errors.New("测量数据无效")
 
 func New(s *store.Store, c *calibration.Service) *Service {
-	return &Service{store: s, calibration: c, coverageCache: make(map[string]domain.CoverageSnapshot)}
+	return &Service{store: s, calibration: c, coverageCache: make(map[string]coverageEntry)}
 }
 
 func (s *Service) AddPoint(taskID string, expected uint64, input PointInput, key string) (domain.MeasurementPoint, error) {
@@ -122,11 +122,12 @@ func (s *Service) Coverage(taskID string) domain.CoverageSnapshot {
 	if err != nil || len(task.RequiredPoints) == 0 {
 		return domain.CoverageSnapshot{Complete: true, Rate: 1}
 	}
+	sequence := lastSequenceFor(s.store.EventsFor(taskID))
 	s.coverageMu.RLock()
 	cached, ok := s.coverageCache[taskID]
 	s.coverageMu.RUnlock()
-	if ok {
-		return cloneCoverage(cached)
+	if ok && cached.sequence == sequence {
+		return cloneCoverage(cached.snapshot)
 	}
 	points := s.CurrentList(taskID)
 	result := domain.CoverageSnapshot{Required: len(task.RequiredPoints), Covered: make([]domain.CoverageItem, 0), Missing: make([]domain.CoverageItem, 0), Duplicate: make([]domain.CoverageItem, 0)}
@@ -161,9 +162,20 @@ func (s *Service) Coverage(taskID string) domain.CoverageSnapshot {
 	result.Rate = float64(result.Completed) / float64(result.Required)
 	result.Complete = result.Completed == result.Required && len(result.Duplicate) == 0
 	s.coverageMu.Lock()
-	s.coverageCache[taskID] = cloneCoverage(result)
+	s.coverageCache[taskID] = coverageEntry{snapshot: cloneCoverage(result), sequence: sequence}
 	s.coverageMu.Unlock()
 	return result
+}
+
+// lastSequenceFor returns the sequence number of the most recent event in the
+// list, or zero when there are no events. Coverage uses it as a cheap data
+// currency check: any append for the task advances it, so a mismatch means the
+// cached snapshot was computed against an older event stream.
+func lastSequenceFor(events []store.Event) uint64 {
+	if len(events) == 0 {
+		return 0
+	}
+	return events[len(events)-1].Sequence
 }
 
 func cloneCoverage(source domain.CoverageSnapshot) domain.CoverageSnapshot {
