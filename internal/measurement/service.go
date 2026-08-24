@@ -340,11 +340,32 @@ func (s *Service) SubmitBatch(taskID string, expected uint64, actor, key string,
 	for _, point := range result.Points {
 		proposed = append(proposed, store.ProposedEvent{AggregateID: taskID, Type: "MeasurementAdded", Actor: actor, Payload: point})
 	}
-	if _, _, err = s.store.AppendBatch(taskID, expected, key, proposed...); err != nil {
-		return BatchResult{}, err
+	if task.Status == domain.StatusReturned && len(proposed) > 1 {
+		if err = s.appendReturnedRevisionBatch(taskID, expected, key, proposed); err != nil {
+			return BatchResult{}, err
+		}
+	} else {
+		if _, _, err = s.store.AppendBatch(taskID, expected, key, proposed...); err != nil {
+			return BatchResult{}, err
+		}
 	}
 	result.Summary = s.Summary(taskID)
 	return result, nil
+}
+
+func (s *Service) appendReturnedRevisionBatch(taskID string, expected uint64, key string, proposed []store.ProposedEvent) error {
+	version := expected
+	for index, event := range proposed {
+		partKey := ""
+		if key != "" {
+			partKey = fmt.Sprintf("%s-part-%d", key, index+1)
+		}
+		if _, _, err := s.store.AppendBatch(taskID, version, partKey, event); err != nil {
+			return err
+		}
+		version++
+	}
+	return nil
 }
 
 func (s *Service) DeterministicSummary(taskID string) DeterministicSummary {
