@@ -19,7 +19,7 @@ var (
 )
 
 func New(s *store.Store, c *calibration.Service, m *measurement.Service) *Service {
-	return &Service{store: s, calibration: c, measurement: m, now: time.Now}
+	return &Service{store: s, calibration: c, measurement: m, now: time.Now, checklists: make(map[string]domain.ReviewChecklist)}
 }
 
 func (s *Service) Deviations(taskID string) []domain.DeviationCase {
@@ -189,6 +189,12 @@ func (s *Service) Checklist(taskID string, expected uint64) (domain.ReviewCheckl
 	if task.Revision != expected {
 		return domain.ReviewChecklist{}, store.NewVersionConflict(task.Revision)
 	}
+	s.checklistMu.RLock()
+	cached, cachedOK := s.checklists[taskID]
+	s.checklistMu.RUnlock()
+	if cachedOK && cached.Version == expected && s.calibration.ValidateStandards(taskID, s.now().UTC()) == nil {
+		return cached, nil
+	}
 	summary := s.measurement.Summary(taskID)
 	coverage := s.measurement.Coverage(taskID)
 	open := 0
@@ -215,7 +221,11 @@ func (s *Service) Checklist(taskID string, expected uint64) (domain.ReviewCheckl
 		items[3].Status = "阻断"
 		items[3].Blocking = true
 	}
-	return domain.ReviewChecklist{Version: expected, Items: items, MeasurementSummary: domain.MeasurementSnapshot{Count: summary.Count, Qualified: summary.Qualified, Deviations: summary.Deviations, Complete: summary.Complete, Overall: summary.Overall}, Coverage: coverage}, nil
+	result := domain.ReviewChecklist{Version: expected, Items: items, MeasurementSummary: domain.MeasurementSnapshot{Count: summary.Count, Qualified: summary.Qualified, Deviations: summary.Deviations, Complete: summary.Complete, Overall: summary.Overall}, Coverage: coverage}
+	s.checklistMu.Lock()
+	s.checklists[taskID] = result
+	s.checklistMu.Unlock()
+	return result, nil
 }
 
 func (s *Service) Submit(taskID string, expected uint64, actor, key string) (domain.CalibrationTask, error) {
