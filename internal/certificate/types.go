@@ -1,6 +1,7 @@
 package certificate
 
 import (
+	"sync"
 	"time"
 
 	"benzhi-project-fa1ab6c4-c201-448a-8d82-5ca18fe9c5ff/internal/calibration"
@@ -53,9 +54,11 @@ type ChainReport struct {
 }
 
 type Service struct {
-	store       *store.Store
-	calibration *calibration.Service
-	measurement *measurement.Service
-	review      *review.Service
-	now         func() time.Time
+	store                 *store.Store
+	calibration           *calibration.Service
+	measurement           *measurement.Service
+	review                *review.Service
+	now                   func() time.Time
+	chainMu               sync.Mutex
+	lastCertificateDigest string
 }

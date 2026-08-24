@@ -26,6 +26,9 @@ func New(s *store.Store, c *calibration.Service, m *measurement.Service, r *revi
 }
 
 func (s *Service) Issue(taskID string, expected uint64, issuedBy, key string, validMonths int) (domain.CalibrationCertificate, error) {
+	s.chainMu.Lock()
+	defer s.chainMu.Unlock()
+
 	if strings.TrimSpace(issuedBy) == "" {
 		return domain.CalibrationCertificate{}, errors.New("签发人不能为空")
 	}
@@ -72,6 +75,7 @@ func (s *Service) Issue(taskID string, expected uint64, issuedBy, key string, va
 	if err != nil {
 		return domain.CalibrationCertificate{}, err
 	}
+	s.lastCertificateDigest = digest
 	return cert, nil
 }
 
@@ -236,11 +240,7 @@ func (s *Service) VerifyChain() ChainReport {
 	return result
 }
 func (s *Service) lastDigest() string {
-	items := s.List()
-	if len(items) == 0 {
-		return ""
-	}
-	return items[len(items)-1].ResultDigest
+	return s.lastCertificateDigest
 }
 func digestMaterial(value material) string {
 	data, _ := json.Marshal(value)
