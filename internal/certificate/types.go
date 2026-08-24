@@ -1,6 +1,7 @@
 package certificate
 
 import (
+	"sync"
 	"time"
 
 	"benzhi-project-fa1ab6c4-c201-448a-8d82-5ca18fe9c5ff/internal/calibration"
@@ -58,4 +59,6 @@ type Service struct {
 	measurement *measurement.Service
 	review      *review.Service
 	now         func() time.Time
+	verifyMu    sync.RWMutex
+	verifyCache map[string]Verification
 }

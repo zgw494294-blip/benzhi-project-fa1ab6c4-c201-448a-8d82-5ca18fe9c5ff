@@ -22,7 +22,7 @@ var (
 )
 
 func New(s *store.Store, c *calibration.Service, m *measurement.Service, r *review.Service) *Service {
-	return &Service{store: s, calibration: c, measurement: m, review: r, now: time.Now}
+	return &Service{store: s, calibration: c, measurement: m, review: r, now: time.Now, verifyCache: make(map[string]Verification)}
 }
 
 func (s *Service) Issue(taskID string, expected uint64, issuedBy, key string, validMonths int) (domain.CalibrationCertificate, error) {
@@ -108,6 +108,13 @@ func (s *Service) Get(number string) (domain.CalibrationCertificate, string, err
 	return domain.CalibrationCertificate{}, "", ErrNotFound
 }
 func (s *Service) Verify(number, code string) (Verification, error) {
+	cacheKey := strings.ToUpper(strings.TrimSpace(number)) + "|" + strings.ToUpper(strings.TrimSpace(code))
+	s.verifyMu.RLock()
+	cached, found := s.verifyCache[cacheKey]
+	s.verifyMu.RUnlock()
+	if found {
+		return cached, nil
+	}
 	cert, previous, err := s.Get(number)
 	if err != nil {
 		return Verification{}, err
@@ -126,7 +133,11 @@ func (s *Service) Verify(number, code string) (Verification, error) {
 	if voided {
 		message = "证书已作废"
 	}
-	return Verification{Certificate: cert, DigestValid: digestOK, CodeValid: codeOK, Issued: issued, WithinValidity: within, Valid: valid, Message: message, Voided: voided}, nil
+	result := Verification{Certificate: cert, DigestValid: digestOK, CodeValid: codeOK, Issued: issued, WithinValidity: within, Valid: valid, Message: message, Voided: voided}
+	s.verifyMu.Lock()
+	s.verifyCache[cacheKey] = result
+	s.verifyMu.Unlock()
+	return result, nil
 }
 func (s *Service) List() []domain.CalibrationCertificate {
 	result := make([]domain.CalibrationCertificate, 0)
