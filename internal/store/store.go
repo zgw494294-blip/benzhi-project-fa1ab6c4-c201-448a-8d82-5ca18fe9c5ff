@@ -217,6 +217,12 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 	if len(verified) != len(s.events) {
 		return nil, false, fmt.Errorf("%w: 内存投影与日志长度不一致", ErrCorruptLog)
 	}
+	logSize := int64(0)
+	if info, statErr := os.Stat(s.logPath); statErr == nil {
+		logSize = info.Size()
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, statErr)
+	}
 	file, err := os.OpenFile(s.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
 	if err != nil {
 		return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
@@ -266,6 +272,19 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 		s.keyDigests[idempotencyKey] = digest
 	}
 	if err := s.writeSnapshotLocked(); err != nil {
+		rollback, openErr := os.OpenFile(s.logPath, os.O_WRONLY, 0o640)
+		if openErr == nil {
+			openErr = rollback.Truncate(logSize)
+			if openErr == nil {
+				openErr = rollback.Sync()
+			}
+			if closeErr := rollback.Close(); openErr == nil {
+				openErr = closeErr
+			}
+		}
+		if openErr != nil {
+			return nil, false, errors.Join(err, fmt.Errorf("%w: 回滚事件日志: %v", ErrStoreUnavailable, openErr))
+		}
 		return nil, false, err
 	}
 	return created, false, nil
