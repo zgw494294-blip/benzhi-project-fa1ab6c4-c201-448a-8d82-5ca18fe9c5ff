@@ -115,11 +115,12 @@ func (s *Server) HandlePreflightMeasurementBatch(w http.ResponseWriter, r *http.
 		writeError(w, err)
 		return
 	}
-	if body.Preflight {
-		writeJSON(w, http.StatusOK, s.measurements.PrecheckBatch(r.PathValue("id"), body.ExpectedVersion, body.Actor, body.Points))
+	result, err := s.measurements.PrecheckBatch(r.Context(), r.PathValue("id"), body.ExpectedVersion, body.Actor, body.Points)
+	if err != nil {
+		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.measurements.PrecheckBatch(r.PathValue("id"), body.ExpectedVersion, body.Actor, body.Points))
+	writeJSON(w, http.StatusOK, result)
 }
 func (s *Server) HandleAddMeasurementBatch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -133,7 +134,12 @@ func (s *Server) HandleAddMeasurementBatch(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if body.Preflight {
-		writeJSON(w, http.StatusOK, s.measurements.PrecheckBatch(r.PathValue("id"), body.ExpectedVersion, body.Actor, body.Points))
+		result, err := s.measurements.PrecheckBatch(r.Context(), r.PathValue("id"), body.ExpectedVersion, body.Actor, body.Points)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 	k, err := key(r)

@@ -1,6 +1,8 @@
 package measurement
 
 import (
+	"sync"
+
 	"benzhi-project-fa1ab6c4-c201-448a-8d82-5ca18fe9c5ff/internal/calibration"
 	"benzhi-project-fa1ab6c4-c201-448a-8d82-5ca18fe9c5ff/internal/domain"
 	"benzhi-project-fa1ab6c4-c201-448a-8d82-5ca18fe9c5ff/internal/store"
@@ -76,6 +78,13 @@ type RevisionDiff struct {
 type Service struct {
 	store       *store.Store
 	calibration *calibration.Service
+	preflightMu sync.Mutex
+	preflights  map[string]*preflightCall
+}
+
+type preflightCall struct {
+	done   chan struct{}
+	result BatchPrecheck
 }
 
 type BatchPrecheck struct {

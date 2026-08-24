@@ -1,6 +1,7 @@
 package measurement
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,7 +18,9 @@ import (
 
 var ErrInvalid = errors.New("测量数据无效")
 
-func New(s *store.Store, c *calibration.Service) *Service { return &Service{store: s, calibration: c} }
+func New(s *store.Store, c *calibration.Service) *Service {
+	return &Service{store: s, calibration: c, preflights: make(map[string]*preflightCall)}
+}
 
 func (s *Service) AddPoint(taskID string, expected uint64, input PointInput, key string) (domain.MeasurementPoint, error) {
 	task, err := s.calibration.Get(taskID)
@@ -155,7 +158,46 @@ func (s *Service) Coverage(taskID string) domain.CoverageSnapshot {
 	return result
 }
 
-func (s *Service) PrecheckBatch(taskID string, expected uint64, actor string, inputs []PointInput) BatchPrecheck {
+func (s *Service) PrecheckBatch(ctx context.Context, taskID string, expected uint64, actor string, inputs []PointInput) (BatchPrecheck, error) {
+	cacheKey := preflightKey(taskID, expected, actor, inputs)
+	s.preflightMu.Lock()
+	if existing, ok := s.preflights[cacheKey]; ok {
+		s.preflightMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return BatchPrecheck{}, ctx.Err()
+		case <-existing.done:
+			return existing.result, nil
+		}
+	}
+	call := &preflightCall{done: make(chan struct{})}
+	s.preflights[cacheKey] = call
+	s.preflightMu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return BatchPrecheck{}, err
+	}
+	result := s.calculatePrecheckBatch(taskID, expected, actor, inputs)
+	s.preflightMu.Lock()
+	call.result = result
+	delete(s.preflights, cacheKey)
+	close(call.done)
+	s.preflightMu.Unlock()
+	return result, nil
+}
+
+func preflightKey(taskID string, expected uint64, actor string, inputs []PointInput) string {
+	data, _ := json.Marshal(struct {
+		TaskID  string       `json:"taskId"`
+		Version uint64       `json:"version"`
+		Actor   string       `json:"actor"`
+		Inputs  []PointInput `json:"inputs"`
+	}{taskID, expected, actor, inputs})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Service) calculatePrecheckBatch(taskID string, expected uint64, actor string, inputs []PointInput) BatchPrecheck {
 	result := BatchPrecheck{Points: make([]domain.MeasurementPoint, 0), Findings: make([]Finding, 0), Version: expected + 1, Valid: true}
 	if strings.TrimSpace(actor) == "" {
 		result.Valid = false
