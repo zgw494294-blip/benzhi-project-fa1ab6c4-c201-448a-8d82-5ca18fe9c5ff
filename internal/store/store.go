@@ -36,6 +36,11 @@ func Open(dir string) (*Store, error) {
 	if err := s.recover(); err != nil {
 		return nil, err
 	}
+	logFile, err := os.OpenFile(s.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
+	}
+	s.logFile = logFile
 	return s, nil
 }
 
@@ -217,10 +222,7 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 	if len(verified) != len(s.events) {
 		return nil, false, fmt.Errorf("%w: 内存投影与日志长度不一致", ErrCorruptLog)
 	}
-	file, err := os.OpenFile(s.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o640)
-	if err != nil {
-		return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
+	file := s.logFile
 	previous := ""
 	if len(s.events) > 0 {
 		previous = s.events[len(s.events)-1].Hash
@@ -230,7 +232,6 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 	for index, item := range proposed {
 		payload, marshalErr := json.Marshal(item.Payload)
 		if marshalErr != nil {
-			file.Close()
 			return nil, false, fmt.Errorf("事件载荷编码失败: %w", marshalErr)
 		}
 		event := Event{
@@ -248,17 +249,12 @@ func (s *Store) AppendBatch(aggregateID string, expectedVersion uint64, idempote
 		event.Hash = calculateHash(event)
 		line, _ := json.Marshal(event)
 		if _, err = file.Write(append(line, '\n')); err != nil {
-			file.Close()
 			return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 		}
 		previous = event.Hash
 		created = append(created, event)
 	}
 	if err = file.Sync(); err != nil {
-		file.Close()
-		return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
-	}
-	if err = file.Close(); err != nil {
 		return nil, false, fmt.Errorf("%w: %v", ErrStoreUnavailable, err)
 	}
 	s.events = append(s.events, created...)

@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 	"time"
 )
@@ -61,6 +62,7 @@ type Store struct {
 	mu           sync.RWMutex
 	dir          string
 	logPath      string
+	logFile      *os.File
 	snapshotPath string
 	events       []Event
 	keyDigests   map[string]string
