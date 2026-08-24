@@ -17,7 +17,9 @@ import (
 
 var ErrInvalid = errors.New("测量数据无效")
 
-func New(s *store.Store, c *calibration.Service) *Service { return &Service{store: s, calibration: c} }
+func New(s *store.Store, c *calibration.Service) *Service {
+	return &Service{store: s, calibration: c, coverageCache: make(map[string]domain.CoverageSnapshot)}
+}
 
 func (s *Service) AddPoint(taskID string, expected uint64, input PointInput, key string) (domain.MeasurementPoint, error) {
 	task, err := s.calibration.Get(taskID)
@@ -120,6 +122,12 @@ func (s *Service) Coverage(taskID string) domain.CoverageSnapshot {
 	if err != nil || len(task.RequiredPoints) == 0 {
 		return domain.CoverageSnapshot{Complete: true, Rate: 1}
 	}
+	s.coverageMu.RLock()
+	cached, ok := s.coverageCache[taskID]
+	s.coverageMu.RUnlock()
+	if ok {
+		return cloneCoverage(cached)
+	}
 	points := s.CurrentList(taskID)
 	result := domain.CoverageSnapshot{Required: len(task.RequiredPoints), Covered: make([]domain.CoverageItem, 0), Missing: make([]domain.CoverageItem, 0), Duplicate: make([]domain.CoverageItem, 0)}
 	for _, required := range task.RequiredPoints {
@@ -152,6 +160,25 @@ func (s *Service) Coverage(taskID string) domain.CoverageSnapshot {
 	}
 	result.Rate = float64(result.Completed) / float64(result.Required)
 	result.Complete = result.Completed == result.Required && len(result.Duplicate) == 0
+	s.coverageMu.Lock()
+	s.coverageCache[taskID] = cloneCoverage(result)
+	s.coverageMu.Unlock()
+	return result
+}
+
+func cloneCoverage(source domain.CoverageSnapshot) domain.CoverageSnapshot {
+	result := source
+	cloneItems := func(items []domain.CoverageItem) []domain.CoverageItem {
+		cloned := make([]domain.CoverageItem, len(items))
+		for index, item := range items {
+			cloned[index] = item
+			cloned[index].MeasurementIDs = append([]string(nil), item.MeasurementIDs...)
+		}
+		return cloned
+	}
+	result.Covered = cloneItems(source.Covered)
+	result.Missing = cloneItems(source.Missing)
+	result.Duplicate = cloneItems(source.Duplicate)
 	return result
 }
 
