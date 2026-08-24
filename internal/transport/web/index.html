@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>地震台站仪器校准证书治理服务</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="brand-mark">震</span><strong>地震计量校准工作台</strong></div>
+    <nav><button class="nav-tab active" data-view="tasks">校准任务</button><button class="nav-tab" data-view="verify">证书校验</button></nav>
+    <span id="health" class="health">正在连接</span>
+  </header>
+  <main>
+    <section id="tasks-view" class="workspace">
+      <aside class="task-rail">
+        <div class="section-title"><div><span class="eyebrow">任务队列</span><h1>校准作业</h1></div><button id="new-task" class="icon-button" title="新建校准任务">＋</button></div>
+        <div class="filters"><button class="filter active" data-status="">全部</button><button class="filter" data-status="待复核">待复核</button><button class="filter" data-status="已退回">已退回</button></div>
+        <div id="task-list" class="task-list"></div>
+      </aside>
+      <section class="detail">
+        <div id="empty-state" class="empty-state"><div class="empty-symbol">⌁</div><h2>选择或创建校准任务</h2><p>从仪器建档开始，所有读数、整改和复核意见都会进入校验事件链。</p></div>
+        <div id="task-detail" hidden>
+          <div class="detail-head"><div><span id="task-id" class="eyebrow"></span><h2 id="instrument-title"></h2><p id="task-meta"></p></div><span id="task-status" class="status"></span></div>
+          <div class="stepper"><span class="step" data-step="measure">1 测量</span><span class="step" data-step="deviation">2 偏差</span><span class="step" data-step="review">3 复核</span><span class="step" data-step="certificate">4 签证</span></div>
+          <section class="panel"><div class="panel-head"><div><h3>测量点</h3><p id="measurement-summary">尚未录入</p></div><div class="actions"><button id="open-required-points" class="secondary">设置必测点</button><button id="open-batch-measurement" class="primary">批量录入</button><button id="open-measurement" class="secondary">单点录入</button></div></div><div class="table-wrap"><table><thead><tr><th>点位</th><th>标准值</th><th>实测值</th><th>误差</th><th>U / 容差</th><th>判定</th></tr></thead><tbody id="measurement-rows"></tbody></table></div></section>
+          <section class="panel"><div class="panel-head"><div><h3>偏差与整改</h3><p>超差或缺失读数必须完成闭环</p></div></div><div id="deviation-list" class="deviation-list"></div></section>
+          <section class="panel actions"><div><h3>放行流程</h3><p id="flow-message">完成测量和偏差处置后提交复核。</p></div><div id="flow-actions"></div></section>
+          <section class="panel"><div class="panel-head"><div><h3>追溯记录</h3><p>按校验链序号展示不可覆盖的业务事件</p></div><button id="refresh-audit" class="secondary">刷新</button></div><ol id="audit-list" class="audit-list"></ol></section>
+        </div>
+      </section>
+    </section>
+    <section id="verify-view" class="verify-view" hidden>
+      <div class="verify-intro"><span class="eyebrow">公开验证</span><h1>校准证书真伪校验</h1><p>输入证书编号和证书上的校验码，系统将复算冻结摘要、签发状态与有效期。</p></div>
+      <form id="verify-form" class="verify-form"><label>证书编号<input name="certificateNo" placeholder="CERT-..." required></label><label>校验码<input name="verificationCode" placeholder="20 位校验码" required></label><button class="primary" type="submit">立即校验</button></form>
+      <div id="verify-result" class="verify-result" hidden></div>
+      <section class="certificate-list"><div class="panel-head"><h2>已签发证书</h2><button id="check-chain" class="secondary">核验证书链</button></div><div id="chain-result" class="verify-result" hidden></div><div id="certificate-items"></div></section>
+    </section>
+  </main>
+
+  <dialog id="modal"><form method="dialog" class="modal-head"><h2 id="modal-title"></h2><button class="icon-button" value="cancel" title="关闭">×</button></form><div id="modal-body"></div></dialog>
+  <div id="toast" role="status"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
